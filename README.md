@@ -32,4 +32,6 @@ Demo Configuration  --->
   5.[系统]编译优化等级-O2
   6.[LVGL]编译器设置中勾选 Set IRAM as LV_ATTRIBUTE_FAST_MEM
   7.开启 lv_demo_benchmark_set_max_speed(true);
+  8.flash设置为QIO
+  9.CPU主频设置为最大
   ```
