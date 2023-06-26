@@ -5,22 +5,53 @@
 
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
+#include "driver/ledc.h"
 #include "esp_log.h"
-#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#define ST7789V_PIN_SCL (3)
-#define ST7789V_PIN_SDA (8)
-#define ST7789V_PIN_RES (18)
-#define ST7789V_PIN_DC (17)
-#define ST7789V_PIN_CS (16)
-#define ST7789V_PIN_BLK (15)
+#define ST7789V_PIN_SCL (CONFIG_ST7789V_PIN_SCL)
+#define ST7789V_PIN_SDA (CONFIG_ST7789V_PIN_SDA)
+#define ST7789V_PIN_RES (CONFIG_ST7789V_PIN_RES)
+#define ST7789V_PIN_DC (CONFIG_ST7789V_PIN_DC)
+#define ST7789V_PIN_CS (CONFIG_ST7789V_PIN_CS)
+#define ST7789V_PIN_BLK (CONFIG_ST7789V_PIN_BLK)
+
+#if defined(CONFIG_ST7789V_USE_COUSTOM_SPI_SPEED)
+#define ST7789V_SPI_SPEED_MHZ (CONFIG_ST7789V_COUSTOM_SPI_SPEED * 1000 * 1000)
+#else
+#if CONFIG_ST7789V_SPI_SPEED_8MHZ
+#define ST7789V_SPI_SPEED_MHZ (SPI_MASTER_FREQ_8M)
+#elif CONFIG_ST7789V_SPI_SPEED_9MHZ
+#define ST7789V_SPI_SPEED_MHZ (SPI_MASTER_FREQ_9M)
+#elif CONFIG_ST7789V_SPI_SPEED_10MHZ
+#define ST7789V_SPI_SPEED_MHZ (SPI_MASTER_FREQ_10M)
+#elif CONFIG_ST7789V_SPI_SPEED_13MHZ
+#define ST7789V_SPI_SPEED_MHZ (SPI_MASTER_FREQ_13M)
+#elif CONFIG_ST7789V_SPI_SPEED_16MHZ
+#define ST7789V_SPI_SPEED_MHZ (SPI_MASTER_FREQ_16M)
+#elif CONFIG_ST7789V_SPI_SPEED_20MHZ
+#define ST7789V_SPI_SPEED_MHZ (SPI_MASTER_FREQ_20M)
+#elif CONFIG_ST7789V_SPI_SPEED_26MHZ
+#define ST7789V_SPI_SPEED_MHZ (SPI_MASTER_FREQ_26M)
+#elif CONFIG_ST7789V_SPI_SPEED_40MHZ
+#define ST7789V_SPI_SPEED_MHZ (SPI_MASTER_FREQ_40M)
+#elif CONFIG_ST7789V_SPI_SPEED_80MHZ
+#define ST7789V_SPI_SPEED_MHZ (SPI_MASTER_FREQ_80M)
+#else
+#define ST7789V_SPI_SPEED_MHZ (SPI_MASTER_FREQ_40M)
+#endif
+#endif
 
 #define ST7789V_SPI_HOST (SPI2_HOST)
-#define ST7789V_SPI_SPEED_MHZ (80)
+#define ORIENTATION (CONFIG_ST7789V_ORIENTATION)
 
+#if ST7789V_HOR_RES > 240
+#define MAX_ROWS 50
+#else
 #define MAX_ROWS 60
+#endif
+
 #define MAX_TRANSFER_SIZE (ST7789V_HOR_RES * MAX_ROWS * 2)
 
 /*The LCD needs a bunch of command/argument values to be initialized. They are
@@ -35,6 +66,7 @@ typedef struct {
 static const char *TAG = "ST7789V";
 
 static spi_device_handle_t spi;
+static bool s_is_st7789v_inited = false;
 
 static void st7789v_send_cmd(uint8_t cmd) {
   esp_err_t ret;
@@ -63,9 +95,9 @@ static void st7789v_set_orientation(uint8_t orientation) {
   const char *orientation_str[] = {"PORTRAIT", "PORTRAIT_INVERTED", "LANDSCAPE",
                                    "LANDSCAPE_INVERTED"};
   ESP_LOGI(TAG, "Display orientation: %s", orientation_str[orientation]);
-  uint8_t data[] = {0x00, 0xC0, 0x60, 0xA0};
+  uint8_t data[] = {0x00, 0x60, 0xC0, 0xA0};
   ESP_LOGI(TAG, "0x36 command value: 0x%02X", data[orientation]);
-  st7789v_send_cmd(0x36);
+  st7789v_send_cmd(ST7789V_MADCTL);
   st7789v_send_data(&data[orientation], 1);
 }
 
@@ -84,10 +116,10 @@ static void st7789v_gpio_init(void) {
                              .max_transfer_sz = MAX_TRANSFER_SIZE + 8};
 
   spi_device_interface_config_t devcfg = {
-      .clock_speed_hz = ST7789V_SPI_SPEED_MHZ * 1000 * 1000,
+      .clock_speed_hz = ST7789V_SPI_SPEED_MHZ,
       .mode = 0,
       .spics_io_num = ST7789V_PIN_CS,
-      .queue_size = 12,
+      .queue_size = 30,
       .pre_cb = spi_pre_transfer_callback,
   };
 
@@ -103,11 +135,33 @@ static void st7789v_gpio_init(void) {
   io_conf.pull_up_en = true;
   gpio_config(&io_conf);
 
-  spi_transaction_t trans;
-  ESP_LOGW(TAG, "length=%d", sizeof(trans.length));
+  ledc_timer_config_t timer_conf = {
+      .duty_resolution = LEDC_TIMER_10_BIT,  // PWM信号的分辨率为10位
+      .freq_hz = 1000,                       // PWM信号的频率为1kHz
+      .speed_mode = LEDC_LOW_SPEED_MODE,  // PWM模块的工作模式为高速模式
+      .timer_num = LEDC_TIMER_0,          // PWM定时器的编号为0
+      .clk_cfg = LEDC_AUTO_CLK,           // PWM时钟分频器为自动选择
+  };
+  ledc_timer_config(&timer_conf);
+
+  // 配置PWM通道
+  ledc_channel_config_t ch_conf = {
+      .gpio_num = ST7789V_PIN_BLK,
+      .speed_mode = LEDC_LOW_SPEED_MODE,
+      .channel = LEDC_CHANNEL_0,  // PWM通道的编号为0
+      .timer_sel = LEDC_TIMER_0,  // PWM定时器的编号为0
+      .duty = 500,                // PWM信号的占空比为50%
+      .hpoint = 0,                // PWM信号的高电平持续时间为0
+  };
+  ledc_channel_config(&ch_conf);
 }
 
 void st7789v_init(void) {
+  if (s_is_st7789v_inited) {
+    ESP_LOGW(TAG, "ST7789V already initialized.");
+  } else {
+    s_is_st7789v_inited = true;
+  }
   st7789v_gpio_init();
 
   lcd_init_cmd_t st7789v_init_cmds[] = {
@@ -163,37 +217,47 @@ void st7789v_init(void) {
     }
     cmd++;
   }
-  st7789v_set_orientation(0);
-  gpio_set_level(ST7789V_PIN_BLK, 1);
+  st7789v_set_orientation(ORIENTATION);
+  st7789v_backlight_set(500); // 50%
 }
-void st7789v_backlight_set(uint8_t brightness) {
-  //
+void st7789v_backlight_set(uint16_t brightness) {
+  if (brightness > 1000) {
+    brightness = 1000;
+  }
+  ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, brightness);
+  ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
 void st7789v_flush(uint16_t x1, uint16_t x2, uint16_t y1, uint16_t y2,
                    void *color_map) {
   static uint32_t transfer_num = 0;
-  static bool first_flush = true;
-  if (first_flush) {
-    first_flush = false;
-  } else {
-    spi_transaction_t *rtrans;
-    for (int x = 0; x < transfer_num; x++) {
-      esp_err_t ret = spi_device_get_trans_result(spi, &rtrans, portMAX_DELAY);
-      if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "1. transfer_num = %d", transfer_num);
-      }
-      assert(ret == ESP_OK);
+  spi_transaction_t *rtrans;
+  // 获取上一次传输的结果
+  for (int x = 0; x < transfer_num; x++) {
+    esp_err_t ret = spi_device_get_trans_result(spi, &rtrans, portMAX_DELAY);
+    if (ret != ESP_OK) {
+      ESP_LOGW(TAG, "1. transfer_num = %d", transfer_num);
     }
-    transfer_num = 0;
+    assert(ret == ESP_OK);
   }
+  transfer_num = 0;
 
-  uint32_t data_len = (x2 - x1 + 1) * (y2 - y1 + 1) * 2;
-  uint32_t data_count = data_len / MAX_TRANSFER_SIZE;
-  uint32_t remain_size = data_len - data_count * MAX_TRANSFER_SIZE;
-  uint32_t remain_rows = (y2 - y1 + 1) - MAX_ROWS * data_count;
+#if defined(CONFIG_ST7789V_ORIENTATION_0) || \
+    defined(CONFIG_ST7789V_ORIENTATION_180)
+  y1 += 20;
+  y2 += 20;
+#else
+  x1 += 20;
+  x2 += 20;
+#endif
 
-  static spi_transaction_t trans[6][6];
-  for (int i = 0; i < (remain_size ? data_count + 1 : data_count); i++) {
+  uint32_t chunk_lines = MAX_TRANSFER_SIZE / ((x2 - x1 + 1) * 2);
+  uint32_t size_per_chunk = (x2 - x1 + 1) * chunk_lines * 2;
+  uint32_t chunk_num = (y2 - y1 + 1) / chunk_lines;
+  uint32_t remain_lines = (y2 - y1 + 1) % chunk_lines;
+  uint32_t chunk_total = chunk_num + (remain_lines > 0 ? 1 : 0);
+
+  static spi_transaction_t trans[6][6] = {0};
+  for (int i = 0; i < chunk_total; i++) {
     for (int x = 0; x < 6; x++) {
       memset(&trans[i][x], 0, sizeof(spi_transaction_t));
       if ((x & 1) == 0) {
@@ -209,75 +273,48 @@ void st7789v_flush(uint16_t x1, uint16_t x2, uint16_t y1, uint16_t y2,
     }
   }
 
-  y1 += 20;
-  y2 += 20;
-
-  for (int i = 0; i < (remain_size ? data_count + 1 : data_count); i++) {
-    if (i < data_count) {
-      trans[i][0].tx_data[0] = ST7789V_CASET;
-      trans[i][1].tx_data[0] = (x1 >> 8) & 0xFF;  // Start Col High
-      trans[i][1].tx_data[1] = (x1)&0xFF;         // Start Col Low
-      trans[i][1].tx_data[2] = (x2 >> 8) & 0xFF;  // End Col High
-      trans[i][1].tx_data[3] = (x2)&0xFF;         // End Col Low
-      trans[i][2].tx_data[0] = ST7789V_RASET;     // Page address set
-      trans[i][3].tx_data[0] = ((y1 + i * MAX_ROWS) >> 8) & 0xFF;
-      trans[i][3].tx_data[1] = (y1 + i * MAX_ROWS) & 0xFF;  // start page low
-      trans[i][3].tx_data[2] = ((y1 + (i + 1) * MAX_ROWS - 1) >> 8) & 0xFF;
-      trans[i][3].tx_data[3] = (y1 + (i + 1) * MAX_ROWS - 1) & 0xFF;
-      trans[i][4].tx_data[0] = ST7789V_RAMWR;  // memory write
-    } else {
-      trans[i][0].tx_data[0] = ST7789V_CASET;
-      trans[i][1].tx_data[0] = (x1 >> 8) & 0xFF;  // Start Col High
-      trans[i][1].tx_data[1] = (x1)&0xFF;         // Start Col Low
-      trans[i][1].tx_data[2] = (x2 >> 8) & 0xFF;  // End Col High
-      trans[i][1].tx_data[3] = (x2)&0xFF;         // End Col Low
-      trans[i][2].tx_data[0] = ST7789V_RASET;     // Page address set
-      trans[i][3].tx_data[0] = ((y1 + i * MAX_ROWS) >> 8) & 0xFF;
-      trans[i][3].tx_data[1] = (y1 + i * MAX_ROWS) & 0xFF;  // start page low
-      trans[i][3].tx_data[2] =
-          ((y1 + i * MAX_ROWS + remain_rows - 1) >> 8) & 0xFF;
-      trans[i][3].tx_data[3] = (y1 + i * MAX_ROWS + remain_rows - 1) & 0xFF;
-      trans[i][4].tx_data[0] = ST7789V_RAMWR;  // memory write
-    }
-  }
-
-  // trans[5].tx_buffer = (void *)color_map;  // finally send the color data
-  // trans[5].length =
-  //     (x2 - x1 + 1) * (y2 - y1 + 1) * 2 * 8;  // Data length, in bits
-  // trans[5].flags = 0;                         // undo SPI_TRANS_USE_TXDATA
-  // flag
   uint8_t *color_map_ptr = (uint8_t *)color_map;
+  uint32_t data_offset = 0;
+  // 分割数据，每次传输最大为MAX_TRANSFER_SIZE
+  for (int i = 0; i < chunk_total; i++) {
+    if (i < chunk_num) {
+      trans[i][0].tx_data[0] = ST7789V_CASET;
+      trans[i][1].tx_data[0] = (x1 >> 8) & 0xFF;  // Start Col High
+      trans[i][1].tx_data[1] = (x1)&0xFF;         // Start Col Low
+      trans[i][1].tx_data[2] = (x2 >> 8) & 0xFF;  // End Col High
+      trans[i][1].tx_data[3] = (x2)&0xFF;         // End Col Low
+      trans[i][2].tx_data[0] = ST7789V_RASET;     // Page address set
+      trans[i][3].tx_data[0] = ((y1 + i * chunk_lines) >> 8) & 0xFF;
+      trans[i][3].tx_data[1] = (y1 + i * chunk_lines) & 0xFF;  // start page low
+      trans[i][3].tx_data[2] = ((y1 + (i + 1) * chunk_lines - 1) >> 8) & 0xFF;
+      trans[i][3].tx_data[3] = (y1 + (i + 1) * chunk_lines - 1) & 0xFF;
+      trans[i][4].tx_data[0] = ST7789V_RAMWR;  // memory write
 
-  for (int i = 0; i < (remain_size ? data_count + 1 : data_count); i++) {
-    if (i < data_count) {
-      trans[i][5].tx_buffer = (void *)(color_map_ptr + i * MAX_TRANSFER_SIZE);
-      trans[i][5].length = MAX_TRANSFER_SIZE * 8;
+      trans[i][5].tx_buffer = (void *)(color_map_ptr + data_offset);
+      trans[i][5].length = size_per_chunk * 8;
       trans[i][5].flags = 0;
+
+      data_offset += size_per_chunk;
     } else {
-      trans[i][5].tx_buffer =
-          (void *)(color_map_ptr + data_count * MAX_TRANSFER_SIZE);
-      trans[i][5].length = remain_size * 8;
+      trans[i][0].tx_data[0] = ST7789V_CASET;
+      trans[i][1].tx_data[0] = (x1 >> 8) & 0xFF;  // Start Col High
+      trans[i][1].tx_data[1] = (x1)&0xFF;         // Start Col Low
+      trans[i][1].tx_data[2] = (x2 >> 8) & 0xFF;  // End Col High
+      trans[i][1].tx_data[3] = (x2)&0xFF;         // End Col Low
+      trans[i][2].tx_data[0] = ST7789V_RASET;     // Page address set
+      trans[i][3].tx_data[0] = ((y1 + i * chunk_lines) >> 8) & 0xFF;
+      trans[i][3].tx_data[1] = (y1 + i * chunk_lines) & 0xFF;  // start page low
+      trans[i][3].tx_data[2] = (y2 >> 8) & 0xFF;
+      trans[i][3].tx_data[3] = (y2)&0xFF;
+      trans[i][4].tx_data[0] = ST7789V_RAMWR;  // memory write
+
+      trans[i][5].tx_buffer = (void *)(color_map_ptr + data_offset);
+      trans[i][5].length = remain_lines * (x2 - x1) * 2 * 8;
       trans[i][5].flags = 0;
     }
   }
 
-  // uint8_t *color_map_ptr = (uint8_t *)color_map;
-  // for (int i = 0; i < data_count; i++) {
-  //   trans[5 + i].tx_buffer = (void *)(color_map_ptr + i * MAX_TRANSFER_SIZE);
-  //   trans[5 + i].length = MAX_TRANSFER_SIZE * 8;
-  //   trans[5 + i].flags = 0;
-  // }
-
-  // if (remain_size > 0) {
-  //   trans[5 + data_count].tx_buffer =
-  //       (void *)(color_map_ptr + data_count * MAX_TRANSFER_SIZE);
-  //   trans[5 + data_count].length = remain_size * 8;
-  //   trans[5 + data_count].flags = 0;
-  //   transfer_num += 1;
-  // }
-
-  // Queue all transactions.
-  for (int i = 0; i < (remain_size ? data_count + 1 : data_count); i++) {
+  for (int i = 0; i < chunk_total; i++) {
     for (int x = 0; x < 6; x++) {
       esp_err_t ret = spi_device_queue_trans(spi, &trans[i][x], portMAX_DELAY);
       assert(ret == ESP_OK);

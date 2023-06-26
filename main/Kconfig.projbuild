@@ -1,0 +1,139 @@
+menu "Demo Configuration"
+  menu "Graphics config"
+    config GRAPHICS_USE_SPIRAM
+    bool "Use SPIRAM memory as image buffer."
+    default n
+    depends on ESP32S3_SPIRAM_SUPPORT
+
+    config GRAPHICS_BUFFER_ROWS
+    int "Number of rows in per buffer"
+    default 60
+    range 1 280
+  endmenu
+
+  menu "ST7789V config"
+    choice 
+      prompt "SPI Speed"
+      default ST7789V_SPI_SPEED_40MHZ
+      help
+        Select the SPI Speed.
+      config ST7789V_SPI_SPEED_8MHZ
+        bool "8MHz"
+      config ST7789V_SPI_SPEED_9MHZ
+        bool "9MHz"
+      config ST7789V_SPI_SPEED_10MHZ
+        bool "11MHz"
+      config ST7789V_SPI_SPEED_13MHZ
+        bool "13MHz"
+      config ST7789V_SPI_SPEED_16MHZ
+        bool "16MHz"
+      config ST7789V_SPI_SPEED_20MHZ
+        bool "20MHz"
+      config ST7789V_SPI_SPEED_26MHZ
+        bool "26MHz"
+      config ST7789V_SPI_SPEED_40MHZ
+        bool "40MHz"
+      config ST7789V_SPI_SPEED_80MHZ
+        bool "80MHz"
+      config ST7789V_SPI_UES_COUSTOM_SPEED
+        bool "Use custom SPI speed"
+    endchoice 
+
+    if ST7789V_SPI_UES_COUSTOM_SPEED
+    config ST7789V_COUSTOM_SPI_SPEED
+      int "SPI Speed in MHz"
+      default 40
+      range 1 80
+      help
+        Set the SPI Speed in MHz.
+    endif 
+
+    choice
+      prompt "Orientation"
+      default ST7789V_ORIENTATION_0
+      help
+        Select the orientation.
+      config ST7789V_ORIENTATION_0
+        bool "0 PORTRAIT"
+      config ST7789V_ORIENTATION_90
+        bool "90 PORTRAIT INVERTED"
+      config ST7789V_ORIENTATION_180
+        bool "180 LANDSCAPE"
+      config ST7789V_ORIENTATION_270
+        bool "270 LANDSCAPE INVERTED"
+    endchoice   
+ 
+    if ST7789V_ORIENTATION_0
+    config ST7789V_ORIENTATION 
+      int 
+      default 0
+    config ST7789V_HOR_RES
+      int
+      default 240
+    config ST7789V_VER_RES
+      int
+      default 280
+    endif
+
+    if ST7789V_ORIENTATION_90
+      config ST7789V_ORIENTATION
+        int
+        default 1
+      config ST7789V_HOR_RES
+        int
+        default 280
+      config ST7789V_VER_RES
+        default 240
+    endif
+
+    if ST7789V_ORIENTATION_180
+      config ST7789V_ORIENTATION
+        int
+        default 2
+      config ST7789V_HOR_RES
+        int
+        default 240
+      config ST7789V_VER_RES
+        int
+        default 280
+    endif
+
+    if ST7789V_ORIENTATION_270
+      config ST7789V_ORIENTATION
+        int
+        default 3
+      config ST7789V_HOR_RES
+        int
+        default 280
+
+      config ST7789V_VER_RES
+        int
+        default 240
+    endif
+
+    config ST7789V_PIN_SCL
+      int "st7789v pin scl"
+      default 3
+
+    config ST7789V_PIN_SDA
+      int "st7789v pin sda"
+      default 8
+
+    config ST7789V_PIN_RES
+      int "st7789v pin res"
+      default 18
+
+    config ST7789V_PIN_DC
+      int "st7789v pin dc"
+      default 17
+
+    config ST7789V_PIN_CS
+      int "st7789v pin cs"
+      default 16
+
+    config ST7789V_PIN_BLK
+      int "st7789v pin blk"
+      default 15
+  endmenu 
+  
+endmenu

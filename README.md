@@ -1,32 +1,35 @@
-# _Sample project_
+# 说明
+  * 屏幕驱动仅支持ST7789V 240*280  
+  * IDF版本：v4.4
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+# 设置
 
-This is the simplest buildable example. The example is used by command `idf.py create-project`
-that copies the project to user specified path and set it's name. For more information follow the [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project)
+```bash
+idf.py menuconfig
 
-
-
-## How to use example
-We encourage the users to use the example as a template for the new projects.
-A recommended way is to follow the instructions on a [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project).
-
-## Example folder contents
-
-The project **sample_project** contains one source file in C language [main.c](main/main.c). The file is located in folder [main](main).
-
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt`
-files that provide set of directives and instructions describing the project's source files and targets
-(executable, library, or both). 
-
-Below is short explanation of remaining files in the project folder.
-
+Demo Configuration  --->
+    Graphics config  ---> #图形缓冲区大小，是否使用SPIRAM作为图形缓冲
+    ST7789V config  --->  #管脚、SPI速度、屏幕方向
 ```
-├── CMakeLists.txt
-├── main
-│   ├── CMakeLists.txt
-│   └── main.c
-└── README.md                  This is the file you are currently reading
-```
-Additionally, the sample project contains Makefile and component.mk files, used for the legacy Make based build system. 
-They are not used or needed when building with CMake and idf.py.
+
+# Q&A
+* 没有看到SPIRAM作为图形缓冲的选项？
+  ```
+  需要先使能系统的SPIRAM
+  ```
+
+* 编译报错：未找到`lv_demo_benchmark();`
+  ```
+  在lvgl设置中使能Demo中的benchmark
+  ```
+
+* 极致跑分怎么得到？
+  ```bash
+  1.使用内部RAM作为图形缓冲
+  2.图形缓冲区尽可能设置大一点
+  3.主函数中的Delay尽可能小
+  4.LVGL硬件设置中刷新时间尽可能小 #Default display refresh period
+  5.[系统]编译优化等级-O2
+  6.[LVGL]编译器设置中勾选 Set IRAM as LV_ATTRIBUTE_FAST_MEM
+  7.开启 lv_demo_benchmark_set_max_speed(true);
+  ```

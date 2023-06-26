@@ -14,7 +14,6 @@
 
 #include <stdbool.h>
 
-#include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "st7789v.h"
 /*********************
@@ -23,7 +22,7 @@
 #define MY_DISP_HOR_RES ST7789V_HOR_RES
 #define MY_DISP_VER_RES ST7789V_VER_RES
 
-#define DISP_BUF_SIZE (MY_DISP_HOR_RES * 40)
+#define DISP_BUF_SIZE (MY_DISP_HOR_RES * (CONFIG_GRAPHICS_BUFFER_ROWS))
 /**********************
  *      TYPEDEFS
  **********************/
@@ -43,8 +42,6 @@ static void disp_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area,
  *  STATIC VARIABLES
  **********************/
 static lv_disp_draw_buf_t draw_buf_dsc;
-static lv_color_t buf_1[DISP_BUF_SIZE];
-static lv_color_t buf_2[DISP_BUF_SIZE];
 /**********************
  *      MACROS
  **********************/
@@ -86,8 +83,14 @@ void lv_port_disp_init(void) {
    *      This way LVGL will always provide the whole rendered screen in
    * `flush_cb` and you only need to change the frame buffer's address.
    */
-  //lv_color_t *buf_1 = heap_caps_malloc(DISP_BUF_SIZE, MALLOC_CAP_SPIRAM);
-  //lv_color_t *buf_2 = heap_caps_malloc(DISP_BUF_SIZE, MALLOC_CAP_SPIRAM);
+#if defined(CONFIG_GRAPHICS_USE_PSRAM)
+  lv_color_t *buf_1 = heap_caps_malloc(DISP_BUF_SIZE*2, MALLOC_CAP_SPIRAM);
+  lv_color_t *buf_2 = heap_caps_malloc(DISP_BUF_SIZE*2, MALLOC_CAP_SPIRAM);
+#else
+  lv_color_t *buf_1 = heap_caps_malloc(DISP_BUF_SIZE*2, MALLOC_CAP_DMA);
+  lv_color_t *buf_2 = heap_caps_malloc(DISP_BUF_SIZE*2, MALLOC_CAP_DMA);
+#endif
+
 
   lv_disp_draw_buf_init(&draw_buf_dsc, buf_1, buf_2,
                         DISP_BUF_SIZE); /*Initialize the display buffer*/
