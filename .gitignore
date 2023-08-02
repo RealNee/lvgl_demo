@@ -93,4 +93,4 @@ dependencies.lock
 managed_components
 
 # sdkconfig.old
-sdkconfig.*
+sdkconfig.old
